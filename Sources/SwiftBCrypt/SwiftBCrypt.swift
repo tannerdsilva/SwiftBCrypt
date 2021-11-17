@@ -11,13 +11,22 @@ public struct BCrypt {
 	}
 	public static func makeSalt(passes:UInt = 12) throws -> Data {
 		let seedBytes = UnsafeMutableBufferPointer<CChar>.allocate(capacity:256)
+		let randomFH = open("/dev/random", 0)
 		defer {
-			seedBytes.deallocate()
+			close(randomFH)
 		}
-		for i in 0..<256 {
-			seedBytes[i] = CChar.random(in:CChar.min...CChar.max)
+		guard randomFH != -1 else {
+			throw Error.unknown
 		}
-		guard let newSaltBuffer = crypt_gensalt_ra("$2b$", passes, seedBytes.baseAddress, 256) else {
+		var readCount:Int = 0
+		repeat {
+			let result = read(randomFH, UnsafeMutableRawPointer(seedBytes.baseAddress), 256)
+			guard result != -1 else {
+				throw Error.unknown
+			}
+			readCount += result
+		} while readCount == 0
+		guard let newSaltBuffer = crypt_gensalt_ra("$2b$", passes, seedBytes.baseAddress, Int32(readCount)) else {
 			switch errno {
 				case EINVAL:
 					throw Error.invalidMethod
